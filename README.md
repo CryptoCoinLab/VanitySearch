@@ -1,6 +1,6 @@
 # VanitySearch
 
-VanitySearch is a bitcoin address prefix finder. If you want to generate safe private keys, use the -s option to enter your passphrase which will be used for generating a base key as for BIP38 standard (*VanitySeacrh.exe -s "My PassPhrase" 1MyPrefix*).\
+VanitySearch is a bitcoin address prefix finder. If you want to generate safe private keys, use the -s option to enter your passphrase which will be used for generating a base key as for BIP38 standard (*VanitySeacrh.exe -s "My PassPhrase" 1MyPrefix*). You can also use *VanitySeacrh.exe -ps "My PassPhrase"* which will add a crypto secure seed to your passphrase.\
 VanitySearch may not compute a good grid size for your GPU, so try different values using -g option in order to get the best performances. If you want to use GPUs and CPUs together, you may have best performances by keeping one CPU core for handling GPU(s)/CPU exchanges (use -t option to set the number of CPU threads).
 
 # Feature
@@ -27,28 +27,31 @@ VanitySearch may not compute a good grid size for your GPU, so try different val
 You can downlad latest release from https://github.com/JeanLucPons/VanitySearch/releases
 
 ```
-VanitySeacrh [-check] [-v] [-u] [-b] [-gpu] [-stop] [-i inputfile]
-             [-gpuId gpuId1[,gpuId2,...]] [-g gridSize1[,gridSize2,...]]
-             [-o outputfile] [-m maxFound] [-s seed] [-t threadNumber]
+VanitySeacrh [-check] [-v] [-u] [-b] [-c] [-gpu] [-stop] [-i inputfile]
+             [-gpuId gpuId1[,gpuId2,...]] [-g g1x,g1y,[,g2x,g2y,...]]
+             [-o outputfile] [-m maxFound] [-ps seed] [-s seed] [-t nbThread]
              [-nosse] [-r rekey] [-check] [-kp] [-sp startPubKey]
              [-rp privkey partialkeyfile] [prefix]
 
- prefix: prefix to search
+ prefix: prefix to search (Can contains wildcard '?' or '*')
  -v: Print version
  -u: Search uncompressed addresses
  -b: Search both uncompressed or compressed addresses
+ -c: Case unsensitive search
  -gpu: Enable gpu calculation
  -stop: Stop when all prefixes are found
  -i inputfile: Get list of prefixes to search from specified file
  -o outputfile: Output results to the specified file
  -gpu gpuId1,gpuId2,...: List of GPU(s) to use, default is 0
- -g gridSize1,gridSize2,...: Specify GPU(s) kernel gridsize, default is 8*(MP number)
+ -g g1x,g1y,g2x,g2y, ...: Specify GPU(s) kernel gridsize, default is 8*(MP number),128
  -m: Specify maximun number of prefixes found by each kernel call
  -s seed: Specify a seed for the base key, default is random
+ -ps seed: Specify a seed concatened with a crypto secure random seed
  -t threadNumber: Specify number of CPU thread, default is number of core
  -nosse: Disable SSE hash function
  -l: List cuda enabled devices
  -check: Check CPU and GPU kernel vs CPU
+ -cp privKey: Compute public key (privKey in hex hormat)
  -kp: Generate key pair
  -rp privkey partialkeyfile: Reconstruct final private key(s) from partial key(s) info.
  -sp startPubKey: Start the search with a pubKey (for private key splitting)
@@ -56,19 +59,20 @@ VanitySeacrh [-check] [-v] [-u] [-b] [-gpu] [-stop] [-i inputfile]
 ```
  
 Exemple (Windows, Intel Core i7-4770 3.4GHz 8 multithreaded cores, GeForce GTX 1050 Ti):
+
 ```
 C:\C++\VanitySearch\x64\Release>VanitySearch.exe -stop -gpu 1TryMe
-VanitySearch v1.11
+VanitySearch v1.17
 Difficulty: 15318045009
 Search: 1TryMe [Compressed]
-Start Wed Apr  3 08:47:08 2019
-Base Key:87B1EC7916A180ACCF07CAAEFA7F6508F3898F61AF49C201D70DF1543CCBA572
+Start Fri Jan 31 08:12:19 2020
+Base Key: DA12E013325F12D6B68520E327847218128B788E6A9F2247BC104A0EE2818F44
 Number of CPU thread: 7
 GPU: GPU #0 GeForce GTX 1050 Ti (6x128 cores) Grid(48x128)
-245.830 MK/s (GPU 226.348 MK/s) (2^30.87) [P 12.06%][50.00% in 00:00:35][0]
-Pub Addr: 1TryMeTKr3tuJZYHMSNWdPZfhRRNYj3yE
-Priv (WIF): p2pkh:L5NuSjQRARifQJbZ5RyLrQhbSz25jYxupnqqydnBdANeH3QNoUph
-Priv (HEX): 0xF36DD1EEC2A9658E50B39B280D4002ED3A07C7B6C07B37B191973BDDFBF9E375
+[251.82 Mkey/s][GPU 235.91 Mkey/s][Total 2^32.82][Prob 39.1%][50% in 00:00:12][Found 0]
+PubAddress: 1TryMeJT7cfs4M6csEyhWVQJPAPmJ4NGw
+Priv (WIF): p2pkh:Kxs4iWcqYHGBfzVpH4K94STNMHHz72DjaCuNdZeM5VMiP9zxMg15
+Priv (HEX): 0x310DBFD6AAB6A63FC71CAB1150A0305ECABBE46819641D2594155CD41D081AF1
 ```
 
 ```

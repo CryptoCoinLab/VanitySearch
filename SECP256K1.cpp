@@ -154,10 +154,10 @@ void Secp256K1::Check() {
   printf("Check Calc PubKey (full) %s :",GetAddress(P2PKH, false,pub).c_str());
   PrintResult(EC(pub));
 
-  // 1Gp7rQ4GdooysEAEJAS2o4Ktjvf1tZCihp
-  pub.x.SetBase16(/*02*/"2b70d6a249aeb187d6f079ecc0fb34d075056ca985384240166a2080c7d2beb5");
-  pub.y = GetY(pub.x,true);
-  printf("Check Calc PubKey (even) %s:",GetAddress(P2PKH, true, pub).c_str());
+  // 385cR5DM96n1HvBDMzLHPYcw89fZAXULJP
+  pub.x.SetBase16(/*03*/"c931af9f331b7a9eb2737667880dacb91428906fbffad0173819a873172d21c4");
+  pub.y = GetY(pub.x,false);
+  printf("Check Calc PubKey (even) %s:",GetAddress(P2SH, true, pub).c_str());
   PrintResult(EC(pub));
 
   // 18aPiLmTow7Xgu96msrDYvSSWweCvB9oBA
@@ -188,7 +188,7 @@ Point Secp256K1::ComputePublicKey(Int *privKey) {
   for(; i < 32; i++) {
     b = privKey->GetByte(i);
     if(b)
-      Q = Add(Q, GTable[256 * i + (b-1)]);
+      Q = Add2(Q, GTable[256 * i + (b-1)]);
   }
 
   Q.Reduce();
@@ -228,17 +228,11 @@ Int Secp256K1::DecodePrivateKey(char *key,bool *compressed) {
       ret.SetByte(count--,privKey[i]);
       
     // Compute checksum
-    unsigned char sha1[32];
-    unsigned char sha2[32];
-    sha256(privKey.data(),33,sha1);
-    sha256(sha1,32,sha2);
-    unsigned char c1 = sha2[0];
-    unsigned char c2 = sha2[1];
-    unsigned char c3 = sha2[2];
-    unsigned char c4 = sha2[3];	  
+    unsigned char c[4];
+    sha256_checksum(privKey.data(), 33, c);
     
-    if( c1!=privKey[33] || c2!=privKey[34] || 
-        c3!=privKey[35] || c4!=privKey[36] ) {
+    if( c[0]!=privKey[33] || c[1]!=privKey[34] || 
+        c[2]!=privKey[35] || c[3]!=privKey[36] ) {
       printf("Warning, Invalid private key checksum !\n");			
     }
     
@@ -260,17 +254,11 @@ Int Secp256K1::DecodePrivateKey(char *key,bool *compressed) {
       ret.SetByte(count--,privKey[i]);
       
     // Compute checksum
-    unsigned char sha1[32];
-    unsigned char sha2[32];
-    sha256(privKey.data(),34,sha1);
-    sha256(sha1,32,sha2);
-    unsigned char c1 = sha2[0];
-    unsigned char c2 = sha2[1];
-    unsigned char c3 = sha2[2];
-    unsigned char c4 = sha2[3];	  
-    
-    if( c1!=privKey[34] || c2!=privKey[35] || 
-        c3!=privKey[36] || c4!=privKey[37] ) {
+    unsigned char c[4];
+    sha256_checksum(privKey.data(), 34, c);
+
+    if( c[0]!=privKey[34] || c[1]!=privKey[35] || 
+        c[2]!=privKey[36] || c[3]!=privKey[37] ) {
       printf("Warning, Invalid private key checksum !\n");			
     }
 
@@ -614,41 +602,108 @@ void Secp256K1::GetHash160(int type, bool compressed, Point &pubKey, unsigned ch
 
 std::string Secp256K1::GetPrivAddress(bool compressed,Int &privKey) {
 
-  unsigned char adress[38];
+  unsigned char address[38];
 
-  adress[0] = 0x80; // Mainnet
-  privKey.Get32Bytes(adress + 1);
+  address[0] = 0x80; // Mainnet
+  privKey.Get32Bytes(address + 1);
   
   if( compressed ) {
 	
     // compressed suffix
-    adress[33] = 1;
-    // Compute checksum
-    unsigned char sha1[32];
-    unsigned char sha2[32];
-    sha256(adress,34,sha1);
-    sha256(sha1,32,sha2);
-    adress[34] = sha2[0];
-    adress[35] = sha2[1];
-    adress[36] = sha2[2];
-    adress[37] = sha2[3];	  
-
-    return EncodeBase58(adress,adress + 38);
+    address[33] = 1;
+    sha256_checksum(address, 34, address + 34);
+    return EncodeBase58(address,address + 38);
 	  
   } else {
 
     // Compute checksum
-    unsigned char sha1[32];
-    unsigned char sha2[32];
-    sha256(adress,33,sha1);
-    sha256(sha1,32,sha2);
-    adress[33] = sha2[0];
-    adress[34] = sha2[1];
-    adress[35] = sha2[2];
-    adress[36] = sha2[3];
+    sha256_checksum(address, 33, address + 33);
+    return EncodeBase58(address,address + 37);
 
-    return EncodeBase58(adress,adress + 37);
   }
+
+}
+
+#define CHECKSUM(buff,A) \
+(buff)[0] = (uint32_t)A[0] << 24 | (uint32_t)A[1] << 16 | (uint32_t)A[2] << 8 | (uint32_t)A[3];\
+(buff)[1] = (uint32_t)A[4] << 24 | (uint32_t)A[5] << 16 | (uint32_t)A[6] << 8 | (uint32_t)A[7];\
+(buff)[2] = (uint32_t)A[8] << 24 | (uint32_t)A[9] << 16 | (uint32_t)A[10] << 8 | (uint32_t)A[11];\
+(buff)[3] = (uint32_t)A[12] << 24 | (uint32_t)A[13] << 16 | (uint32_t)A[14] << 8 | (uint32_t)A[15];\
+(buff)[4] = (uint32_t)A[16] << 24 | (uint32_t)A[17] << 16 | (uint32_t)A[18] << 8 | (uint32_t)A[19];\
+(buff)[5] = (uint32_t)A[20] << 24 | 0x800000;\
+(buff)[6] = 0; \
+(buff)[7] = 0; \
+(buff)[8] = 0; \
+(buff)[9] = 0; \
+(buff)[10] = 0; \
+(buff)[11] = 0; \
+(buff)[12] = 0; \
+(buff)[13] = 0; \
+(buff)[14] = 0; \
+(buff)[15] = 0xA8;
+
+std::vector<std::string> Secp256K1::GetAddress(int type, bool compressed, unsigned char *h1, unsigned char *h2, unsigned char *h3, unsigned char *h4) {
+
+  std::vector<std::string> ret;
+
+  unsigned char add1[25];
+  unsigned char add2[25];
+  unsigned char add3[25];
+  unsigned char add4[25];
+  uint32_t b1[16];
+  uint32_t b2[16];
+  uint32_t b3[16];
+  uint32_t b4[16];
+
+  switch (type) {
+
+  case P2PKH:
+    add1[0] = 0x00;
+    add2[0] = 0x00;
+    add3[0] = 0x00;
+    add4[0] = 0x00;
+    break;
+
+  case P2SH:
+    add1[0] = 0x05;
+    add2[0] = 0x05;
+    add3[0] = 0x05;
+    add4[0] = 0x05;
+    break;
+
+  case BECH32:
+  {
+    char output[128];
+    segwit_addr_encode(output, "bc", 0, h1, 20);
+    ret.push_back(std::string(output));
+    segwit_addr_encode(output, "bc", 0, h2, 20);
+    ret.push_back(std::string(output));
+    segwit_addr_encode(output, "bc", 0, h3, 20);
+    ret.push_back(std::string(output));
+    segwit_addr_encode(output, "bc", 0, h4, 20);
+    ret.push_back(std::string(output));
+    return ret;
+  }
+  break;
+  }
+
+  memcpy(add1 + 1, h1, 20);
+  memcpy(add2 + 1, h2, 20);
+  memcpy(add3 + 1, h3, 20);
+  memcpy(add4 + 1, h4, 20);
+  CHECKSUM(b1, add1);
+  CHECKSUM(b2, add2);
+  CHECKSUM(b3, add3);
+  CHECKSUM(b4, add4);
+  sha256sse_checksum(b1,b2,b3,b4,add1 + 21, add2 + 21, add3 + 21, add4 + 21);
+
+  // Base58
+  ret.push_back(EncodeBase58(add1, add1 + 25));
+  ret.push_back(EncodeBase58(add2, add2 + 25));
+  ret.push_back(EncodeBase58(add3, add3 + 25));
+  ret.push_back(EncodeBase58(add4, add4 + 25));
+
+  return ret;
 
 }
 
@@ -674,16 +729,7 @@ std::string Secp256K1::GetAddress(int type, bool compressed,unsigned char *hash1
     break;
   }
   memcpy(address + 1, hash160,20);
-
-  // Compute checksum
-  unsigned char sha1[32];
-  unsigned char sha2[32];
-  sha256(address,21,sha1);
-  sha256(sha1,32,sha2);
-  address[21] = sha2[0];
-  address[22] = sha2[1];
-  address[23] = sha2[2];
-  address[24] = sha2[3];
+  sha256_checksum(address,21,address+21);
 
   // Base58
   return EncodeBase58(address, address + 25);
@@ -702,6 +748,9 @@ std::string Secp256K1::GetAddress(int type, bool compressed, Point &pubKey) {
 
   case BECH32:
   {
+    if (!compressed) {
+      return " BECH32: Only compressed key ";
+    }
     char output[128];
     uint8_t h160[20];
     GetHash160(type, compressed, pubKey, h160);
@@ -711,21 +760,15 @@ std::string Secp256K1::GetAddress(int type, bool compressed, Point &pubKey) {
   break;
 
   case P2SH:
+    if (!compressed) {
+      return " P2SH: Only compressed key ";
+    }
     address[0] = 0x05;
     break;
   }
 
   GetHash160(type,compressed,pubKey, address + 1);
-
-  // Compute checksum
-  unsigned char sha1[32];
-  unsigned char sha2[32];
-  sha256(address,21,sha1);
-  sha256(sha1,32,sha2);
-  address[21] = sha2[0];
-  address[22] = sha2[1];
-  address[23] = sha2[2];
-  address[24] = sha2[3];
+  sha256_checksum(address, 21, address + 21);
 
   // Base58
   return EncodeBase58(address, address + 25);
@@ -741,15 +784,13 @@ bool Secp256K1::CheckPudAddress(std::string address) {
     return false;
 
   // Check checksum
-  unsigned char sha1[32];
-  unsigned char sha2[32];
-  sha256(pubKey.data(),21,sha1);
-  sha256(sha1,32,sha2);
-  
-  return  (pubKey[21] == sha2[0]) &&
-          (pubKey[22] == sha2[1]) &&
-          (pubKey[23] == sha2[2]) &&
-          (pubKey[24] == sha2[3]);
+  unsigned char chk[4];
+  sha256_checksum(pubKey.data(), 21, chk);
+
+  return  (pubKey[21] == chk[0]) &&
+          (pubKey[22] == chk[1]) &&
+          (pubKey[23] == chk[2]) &&
+          (pubKey[24] == chk[3]);
 
 }
 
@@ -775,6 +816,50 @@ Point Secp256K1::AddDirect(Point &p1,Point &p2) {
   r.y.ModSub(&p2.x,&r.x);
   r.y.ModMulK1(&_s);
   r.y.ModSub(&p2.y);       // ry = - p2.y - s*(ret.x-p2.x);  
+
+  return r;
+
+}
+
+Point Secp256K1::Add2(Point &p1, Point &p2) {
+
+  // P2.z = 1
+
+  Int u;
+  Int v;
+  Int u1;
+  Int v1;
+  Int vs2;
+  Int vs3;
+  Int us2;
+  Int a;
+  Int us2w;
+  Int vs2v2;
+  Int vs3u2;
+  Int _2vs2v2;
+  Point r;
+
+  u1.ModMulK1(&p2.y, &p1.z);
+  v1.ModMulK1(&p2.x, &p1.z);
+  u.ModSub(&u1, &p1.y);
+  v.ModSub(&v1, &p1.x);
+  us2.ModSquareK1(&u);
+  vs2.ModSquareK1(&v);
+  vs3.ModMulK1(&vs2, &v);
+  us2w.ModMulK1(&us2, &p1.z);
+  vs2v2.ModMulK1(&vs2, &p1.x);
+  _2vs2v2.ModAdd(&vs2v2, &vs2v2);
+  a.ModSub(&us2w, &vs3);
+  a.ModSub(&_2vs2v2);
+
+  r.x.ModMulK1(&v, &a);
+
+  vs3u2.ModMulK1(&vs3, &p1.y);
+  r.y.ModSub(&vs2v2, &a);
+  r.y.ModMulK1(&r.y, &u);
+  r.y.ModSub(&vs3u2);
+
+  r.z.ModMulK1(&vs3, &p1.z);
 
   return r;
 

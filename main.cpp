@@ -25,7 +25,7 @@
 #include "hash/sha512.h"
 #include "hash/sha256.h"
 
-#define RELEASE "1.13"
+#define RELEASE "1.18"
 
 using namespace std;
 
@@ -34,11 +34,11 @@ using namespace std;
 void printUsage() {
 
   printf("VanitySeacrh [-check] [-v] [-u] [-b] [-c] [-gpu] [-stop] [-i inputfile]\n");
-  printf("             [-gpuId gpuId1[,gpuId2,...]] [-g gridSize1[,gridSize2,...]]\n");
-  printf("             [-o outputfile] [-m maxFound] [-s seed] [-t threadNumber]\n");
+  printf("             [-gpuId gpuId1[,gpuId2,...]] [-g g1x,g1y,[,g2x,g2y,...]]\n");
+  printf("             [-o outputfile] [-m maxFound] [-ps seed] [-s seed] [-t nbThread]\n");
   printf("             [-nosse] [-r rekey] [-check] [-kp] [-sp startPubKey]\n");
   printf("             [-rp privkey partialkeyfile] [prefix]\n\n");
-  printf(" prefix: prefix to search\n");
+  printf(" prefix: prefix to search (Can contains wildcard '?' or '*')\n");
   printf(" -v: Print version\n");
   printf(" -u: Search uncompressed addresses\n");
   printf(" -b: Search both uncompressed or compressed addresses\n");
@@ -48,18 +48,20 @@ void printUsage() {
   printf(" -i inputfile: Get list of prefixes to search from specified file\n");
   printf(" -o outputfile: Output results to the specified file\n");
   printf(" -gpu gpuId1,gpuId2,...: List of GPU(s) to use, default is 0\n");
-  printf(" -g gridSize1,gridSize2,...: Specify GPU(s) kernel gridsize, default is 8*(MP number)\n");
+  printf(" -g g1x,g1y,g2x,g2y, ...: Specify GPU(s) kernel gridsize, default is 8*(MP number),128\n");
   printf(" -m: Specify maximun number of prefixes found by each kernel call\n");
   printf(" -s seed: Specify a seed for the base key, default is random\n");
+  printf(" -ps seed: Specify a seed concatened with a crypto secure random seed\n");
   printf(" -t threadNumber: Specify number of CPU thread, default is number of core\n");
   printf(" -nosse: Disable SSE hash function\n");
   printf(" -l: List cuda enabled devices\n");
   printf(" -check: Check CPU and GPU kernel vs CPU\n");
+  printf(" -cp privKey: Compute public key (privKey in hex hormat)\n");
   printf(" -kp: Generate key pair\n");
   printf(" -rp privkey partialkeyfile: Reconstruct final private key(s) from partial key(s) info.\n");
   printf(" -sp startPubKey: Start the search with a pubKey (for private key splitting)\n");
   printf(" -r rekey: Rekey interval in MegaKey, default is disabled\n");
-  exit(-1);
+  exit(0);
 
 }
 
@@ -160,17 +162,20 @@ void parseFile(string fileName, vector<string> &lines) {
 
 // ------------------------------------------------------------------------------------------
 
-void generateKeyPair(Secp256K1 *secp, string seed, int searchMode) {
+void generateKeyPair(Secp256K1 *secp, string seed, int searchMode,bool paranoiacSeed) {
 
   if (seed.length() < 8) {
     printf("Error: Use a seed of at leats 8 characters to generate a key pair\n");
     printf("Ex: VanitySearch -s \"A Strong Password\" -kp\n");
-    exit(0);
+    exit(-1);
   }
+
+  if(paranoiacSeed)
+    seed = seed + Timer::getSeed(32);
 
   if (searchMode == SEARCH_BOTH) {
     printf("Error: Use compressed or uncompressed to generate a key pair\n");
-    exit(0);
+    exit(-1);
   }
 
   bool compressed = (searchMode == SEARCH_COMPRESSED);
@@ -371,8 +376,8 @@ int main(int argc, char* argv[]) {
 
   // Browse arguments
   if (argc < 2) {
-    printf("Not enough argument\n");
-    printUsage();
+    printf("Error: Not enough argument (use -h for help)");
+    exit(-1);
   }
 
   int a = 1;
@@ -380,7 +385,7 @@ int main(int argc, char* argv[]) {
   bool stop = false;
   int searchMode = SEARCH_COMPRESSED;
   vector<int> gpuId = {0};
-  vector<int> gridSize = {-1};
+  vector<int> gridSize;
   string seed = "";
   vector<string> prefix;
   string outputFile = "";
@@ -393,6 +398,7 @@ int main(int argc, char* argv[]) {
   startPuKey.Clear();
   bool startPubKeyCompressed;
   bool caseSensitive = true;
+  bool paranoiacSeed = false;
 
   while (a < argc) {
 
@@ -418,7 +424,11 @@ int main(int argc, char* argv[]) {
       secp->Check();
 
 #ifdef WITHGPU
-      GPUEngine g(gridSize[0],gpuId[0],maxFound,false);
+      if (gridSize.size() == 0) {
+        gridSize.push_back(-1);
+        gridSize.push_back(128);
+      }
+      GPUEngine g(gridSize[0],gridSize[1],gpuId[0],maxFound,false);
       g.SetSearchMode(searchMode);
       g.Check(secp);
 #else
@@ -435,13 +445,30 @@ int main(int argc, char* argv[]) {
       exit(0);
 
     } else if (strcmp(argv[a], "-kp") == 0) {
-      generateKeyPair(secp,seed,searchMode);
+      generateKeyPair(secp,seed,searchMode,paranoiacSeed);
       exit(0);
     } else if (strcmp(argv[a], "-sp") == 0) {
       a++;
       string pub = string(argv[a]);
       startPuKey = secp->ParsePublicKeyHex(pub, startPubKeyCompressed);
       a++;
+    } else if (strcmp(argv[a], "-cp") == 0) {
+      a++;
+      string priv = string(argv[a]);
+      Int k;
+      bool isComp = true;
+      if(priv[0]=='5' || priv[0] == 'K' || priv[0] == 'L') {
+        k = secp->DecodePrivateKey((char *)priv.c_str(),&isComp);
+      } else {
+        k.SetBase16(argv[a]);
+      }
+      Point p = secp->ComputePublicKey(&k);
+      printf("PrivAddr: p2pkh:%s\n",secp->GetPrivAddress(isComp,k).c_str());
+      printf("PubKey: %s\n",secp->GetPublicKeyHex(isComp,p).c_str());
+      printf("Addr (P2PKH): %s\n", secp->GetAddress(P2PKH,isComp,p).c_str());
+      printf("Addr (P2SH): %s\n", secp->GetAddress(P2SH,isComp,p).c_str());
+      printf("Addr (BECH32): %s\n", secp->GetAddress(BECH32,isComp,p).c_str());
+      exit(0);
     } else if (strcmp(argv[a], "-rp") == 0) {
       a++;
       string priv = string(argv[a]);
@@ -467,6 +494,11 @@ int main(int argc, char* argv[]) {
       a++;
       seed = string(argv[a]);
       a++;
+    } else if (strcmp(argv[a], "-ps") == 0) {
+      a++;
+      seed = string(argv[a]);
+      paranoiacSeed = true;
+      a++;
     } else if (strcmp(argv[a], "-o") == 0) {
       a++;
       outputFile = string(argv[a]);
@@ -488,27 +520,28 @@ int main(int argc, char* argv[]) {
       a++;
       rekey = (uint64_t)getInt("rekey", argv[a]);
       a++;
+    } else if (strcmp(argv[a], "-h") == 0) {
+      printUsage();
     } else if (a == argc - 1) {
       prefix.push_back(string(argv[a]));
       a++;
     } else {
       printf("Unexpected %s argument\n",argv[a]);
-      printUsage();
+      exit(-1);
     }
 
   }
 
   printf("VanitySearch v" RELEASE "\n");
 
-  if(gpuId.size()!=gridSize.size()) {
-    if(gridSize.size()==1 && gridSize[0]==-1) {
-      gridSize.clear();
-      for(int i=0;i<gpuId.size();i++)
-        gridSize.push_back(-1);
-    } else {
-      printf("Invalid gridSize or gpuId argument, must have same size\n");
-      printUsage();
+  if(gridSize.size()==0) {
+    for (int i = 0; i < gpuId.size(); i++) {
+      gridSize.push_back(-1);
+      gridSize.push_back(128);
     }
+  } else if(gridSize.size() != gpuId.size()*2) {
+    printf("Invalid gridSize or gpuId argument, must have coherent size\n");
+    exit(-1);
   }
 
   // Let one CPU core free per gpu is gpu is enabled
@@ -524,7 +557,7 @@ int main(int argc, char* argv[]) {
   }
 
   VanitySearch *v = new VanitySearch(secp, prefix, seed, searchMode, gpuEnable, stop, outputFile, sse,
-    maxFound, rekey, caseSensitive, startPuKey);
+    maxFound, rekey, caseSensitive, startPuKey, paranoiacSeed);
   v->Search(nbCPUThread,gpuId,gridSize);
 
   return 0;
